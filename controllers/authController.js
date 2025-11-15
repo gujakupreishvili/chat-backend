@@ -1,5 +1,5 @@
 const pool = require("../config/db");
-const { createUser, findUserById } = require("../models/user");
+const { createUser, findUserById, getAllUsers } = require("../models/user");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const {registerSchema , loginSchema} = require("../validation/auth")
@@ -32,6 +32,16 @@ const getUserById = async (req, res) => {
     res.json(user);
   } catch (err) {
     console.error("GetUserById Error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+const getUsers = async (req, res) => {
+  try {
+    const users = await getAllUsers();
+    res.json({ users });
+  } catch (err) {
+    console.error("GetUsers Error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -71,4 +81,4 @@ const login = async (req, res) => {
   }
 };
 
-module.exports = { register, getUserById, login };
+module.exports = { register, getUserById, login ,getUsers };
