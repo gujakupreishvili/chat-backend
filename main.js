@@ -16,19 +16,8 @@ app.use(cors({
   credentials: true,
 }));
 
-
-app.use("/api/auth", authRoutes);
-app.use("/api/messages", messageRoutes);
-
-app.get("/", async (req, res) => {
-  try {
-    const result = await pool.query("SELECT NOW()");
-    res.json({ message: "Hello World", dbTime: result.rows[0].now });
-  } catch (error) {
-    console.error("DB ERROR:", error);
-    res.status(500).json({ error: "Database error" });
-  }
-});
+const onlineUsers = new Map(); 
+app.locals.userSockets = {};
 
 const server = http.createServer(app);
 
@@ -40,13 +29,32 @@ const io = new Server(server, {
   },
 });
 
-io.use(socketMiddleware);
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
 
-const onlineUsers = new Map();
+app.use("/api/auth", authRoutes);
+app.use("/api/messages", messageRoutes);
+app.use("/uploads", express.static("uploads"));
+
+app.get("/", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT NOW()");
+    res.json({ message: "Hello World", dbTime: result.rows[0].now });
+  } catch (error) {
+    console.error("DB ERROR:", error);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+io.use(socketMiddleware);
 
 io.on("connection", (socket) => {
   console.log(`${socket.user.username} connected, socketId: ${socket.id}`);
+  
   onlineUsers.set(socket.user.id, socket.id);
+  app.locals.userSockets[socket.user.id] = socket.id;
 
   io.emit("online_users", Array.from(onlineUsers.keys()));
 
@@ -57,11 +65,13 @@ io.on("connection", (socket) => {
   
       const { createMessage } = require("./models/message");
       const message = await createMessage(text, sender_id, receiver_id);
-  
 
       const fullMessage = {
         ...message,
-        username: socket.user.username
+        username: socket.user.username,
+        image_url: message.image_path 
+        ? `http://localhost:3001/uploads/${message.image_path}`
+        : null
       };
   
       if (receiver_id) {
@@ -69,6 +79,7 @@ io.on("connection", (socket) => {
         if (receiverSocket) {
           io.to(receiverSocket).emit("receive_message", fullMessage);
         }
+        io.to(socket.id).emit("receive_message", fullMessage);
       } else {
         io.emit("receive_message", fullMessage);
       }
@@ -82,6 +93,7 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     console.log(`${socket.user.username} disconnected`);
     onlineUsers.delete(socket.user.id);
+    delete app.locals.userSockets[socket.user.id]; 
     io.emit("online_users", Array.from(onlineUsers.keys()));
   });
 });
